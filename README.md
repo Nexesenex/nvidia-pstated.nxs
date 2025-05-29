@@ -6,7 +6,7 @@ A daemon that automatically manages the performance states of NVIDIA GPUs.
 
 ```mermaid
 flowchart TD
-    START(Start) --> CHECK_TEMPERATURE
+    A(Start) --> B
     subgraph For each GPU
     B("Check temperature[1]") -->|Below threshold| D
     B("Check temperature[1]") -->|Above threshold| C
@@ -25,8 +25,8 @@ flowchart TD
     K(Reset iterations counter) --> M
     L("Enter high PState[4]/Clock[7]") --> M
     end
-    END(End) --> SLEEP
-    SLEEP("Sleep[6]") --> START
+    M(End) --> N
+    N("Sleep[5]") --> A
 ```
 
 1 - Threshold is controlled by option `--temperature-threshold` (default: `80` degrees C)  
@@ -86,43 +86,6 @@ cmake -B build
 cmake --build build
 ```
 
-### Nix
-
-This project provides a Nix flake to build the binary:
-
-```sh
-nix build
-```
-
-**NixOS Module:**
-
-The flake also provides a NixOS module. To use it, add the flake to your inputs and import the module in your NixOS configuration.
-
-`flake.nix`:
-```nix
-{
-  inputs.nvidia-pstated.url = "github:sasha0552/nvidia-pstated";
-
-  outputs = { self, nixpkgs, nvidia-pstated }: {
-    nixosConfigurations.your-hostname = nixpkgs.lib.nixosSystem {
-      # ...
-      modules = [
-        ./configuration.nix
-        nvidia-pstated.nixosModules.default
-      ];
-    };
-  };
-}
-```
-
-`configuration.nix`:
-```nix
-{ config, pkgs, ... }: {
-  # ...
-  services.nvidia-pstated.enable = true;
-}
-```
-
 ## Misc
 
 ### Managing only specific GPUs
@@ -174,6 +137,7 @@ DynamicUser=yes
 ExecStart=/usr/local/bin/nvidia-pstated
 Restart=on-failure
 RestartSec=1s
+StartLimitBurst=0
 
 [Install]
 WantedBy=multi-user.target
@@ -218,17 +182,38 @@ To do this, you need to:
 5. Use `sed -i 's/535.183.06/535.183.04/g' libnvidia-api.so.1` (replace the values with what you got in `dmesg`) to replace the client version in `libnvidia-api.so.1`.
 6. Run `nvidia-pstated`: `LD_LIBRARY_PATH=. ./nvidia-pstated`. Enjoy.
 
-### Controlling the fans from `nvidia-pstated`
+### Crash Recovery
 
-You can control the external fans installed on the GPUs using `--disable-fan-script` and `--enable-fan-script`
+If the daemon crashes unexpectedly, GPU clocks might remain at low frequencies. To manually reset all GPUs to their default clock settings:
 
-For example, I have a server fans connected to AC 220v -> DC 12v PSU. I'm using a Sonoff Basic R2 (a AC 220v smart relay) with flashed [Tasmota](https://tasmota.github.io/docs/) on it, and can control it by using:
+#### For GPUs using clock control (V100, etc):
 
-`nvidia-pstated --disable-fan-script 'curl --output /dev/null --silent "http://x.x.x.x/cm?cmnd=POWER%20OFF"' --enable-fan-script 'curl --output /dev/null --silent "http://x.x.x.x/cm?cmnd=POWER%20ON"'`
+```sh
+# Linux
+nvidia-smi -rac
 
-By default, nvidia-pstated:
-1. Disables the fans at startup
-2. Enables the fans when the GPUs are overheated (`--temperature-threshold`)
-3. Enables the fans when switching to high performance state
-4. Disables the fans when idling for 15 minutes (when not overheated)
-5. Enables the fans at exit
+# Windows
+nvidia-smi -rac
+```
+
+#### For GPUs using P-states:
+
+```sh
+# Linux/Windows - Reset to auto P-state mode (P0)
+nvidia-smi -rgc
+```
+
+For systemd services, you can improve crash handling by adding the following to ensure automatic restart:
+
+```text
+[Service]
+RestartSec=1s
+StartLimitInterval=0
+StartLimitBurst=0
+```
+
+For Windows services, set the recovery actions in the service properties or via command:
+
+```sh
+sc.exe failure nvidia-pstated reset= 0 actions= restart/60000/restart/60000/restart/60000
+```
