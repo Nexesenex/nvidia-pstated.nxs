@@ -8,27 +8,22 @@ A daemon that automatically manages the performance states of NVIDIA GPUs.
 flowchart TD
     START(Start) --> CHECK_TEMPERATURE
     subgraph For each GPU
-    CHECK_TEMPERATURE("Check temperature[1]") -->|Below threshold| CHECK_UTILIZATION
-    CHECK_TEMPERATURE("Check temperature[1]") -->|Above threshold| ENTER_LOW_PSTATE_0
-    ENTER_LOW_PSTATE_0("Enter low PState[2]") --> ENTER_HIGH_FAN_STATE_0
-    ENTER_HIGH_FAN_STATE_0("Enter high fan state[9]") --> END
-    CHECK_UTILIZATION("Check utilization[3]") -->|Below threshold| CHECK_CURRENT_PSTATE_0
-    CHECK_UTILIZATION("Check utilization[3]") -->|Above threshold| CHECK_CURRENT_PSTATE_1
-    CHECK_CURRENT_PSTATE_0(Check current PState) -->|High| ITERATIONS_COUNTER_EXCEEDED_THRESHOLD_0
-    CHECK_CURRENT_PSTATE_0(Check current PState) -->|Low| DO_NOTHING
-    ITERATIONS_COUNTER_EXCEEDED_THRESHOLD_0("Iterations counter exceeded threshold[4]") -->|Yes| ENTER_LOW_PSTATE
-    ITERATIONS_COUNTER_EXCEEDED_THRESHOLD_0("Iterations counter exceeded threshold[4]") -->|No| ITERATIONS_COUNTER_EXCEEDED_THRESHOLD_1
-    ENTER_LOW_PSTATE("Enter low PState[2]") --> ITERATIONS_COUNTER_EXCEEDED_THRESHOLD_1
-    ITERATIONS_COUNTER_EXCEEDED_THRESHOLD_1("Iterations counter exceeded threshold[7]") -->|Yes| ENTER_LOW_FAN_STATE_1
-    ITERATIONS_COUNTER_EXCEEDED_THRESHOLD_1("Iterations counter exceeded threshold[7]") -->|No| INCREMENT_ITERATIONS_COUNTER
-    ENTER_LOW_FAN_STATE_1("Enter low fan state[8]") --> INCREMENT_ITERATIONS_COUNTER
-    INCREMENT_ITERATIONS_COUNTER(Increment iterations counter) --> END
-    DO_NOTHING(Do nothing) --> END
-    CHECK_CURRENT_PSTATE_1(Check current PState) -->|High| RESET_ITERATIONS_COUNTER
-    CHECK_CURRENT_PSTATE_1(Check current PState) -->|Low| ENTER_HIGH_PSTATE
-    RESET_ITERATIONS_COUNTER(Reset iterations counter) --> END
-    ENTER_HIGH_PSTATE("Enter high PState[5]") --> ENTER_HIGH_FAN_STATE_1
-    ENTER_HIGH_FAN_STATE_1("Enter high fan state[9]") --> END
+    B("Check temperature[1]") -->|Below threshold| D
+    B("Check temperature[1]") -->|Above threshold| C
+    C("Enter low PState[2]/Clock[6]") --> M
+    D(Check utilization) -->|Is 0%| E
+    D(Check utilization) -->|Is not 0%| J
+    E(Check current PState) -->|High| F
+    E(Check current PState) -->|Low| I
+    F("Iterations counter exceeded threshold[3]") -->|Yes| G
+    F("Iterations counter exceeded threshold[3]") -->|No| H
+    G("Enter low PState[2]/Clock[6]") --> H
+    H(Increment iterations counter) --> M
+    I(Do nothing) --> M
+    J(Check current PState) -->|High| K
+    J(Check current PState) -->|Low| L
+    K(Reset iterations counter) --> M
+    L("Enter high PState[4]/Clock[7]") --> M
     end
     END(End) --> SLEEP
     SLEEP("Sleep[6]") --> START
@@ -36,13 +31,11 @@ flowchart TD
 
 1 - Threshold is controlled by option `--temperature-threshold` (default: `80` degrees C)  
 2 - Value is controlled by option `--performance-state-low` (default: `8`)  
-3 - Threshold is controlled by option `--utilization-threshold` (default: `0` %)  
-4 - Threshold is controlled by option  `--iterations-before-switch` (default: `30` iterations)  
-5 - Value is controlled by option `--performance-state-high` (default: `16`)  
-6 - Value is controlled by option `--sleep-interval` (default: `100` milliseconds)  
-7 - Threshold is controlled by option `--iterations-before-idle` (default: `9000` iterations)  
-8 - Value is controlled by option `--disable-fan-script` (default: none)  
-9 - Value is controlled by option `--enable-fan-script` (default: none)
+3 - Threshold is controlled by option  `--iterations-before-switch` (default: `30` iterations)  
+4 - Value is controlled by option `--performance-state-high` (default: `16`)  
+5 - Value is controlled by option `--sleep-interval` (default: `100` milliseconds)  
+6 - For GPUs without P-states support (like Tesla V100), low clock is controlled by options `--clock-mem-low` and `--clock-gpu-low`  
+7 - For GPUs without P-states support (like Tesla V100), high clock is controlled by options `--clock-mem-high` and `--clock-gpu-high`  
 
 ## Installation
 
@@ -140,6 +133,31 @@ Suppose you have 8 GPUs and you want to manage only the first 4 (as in `nvidia-s
 
 ```sh
 ./nvidia-pstated -i 0,1,2,3
+```
+
+### Support for Tesla V100 and other GPUs without P-states
+
+Some GPUs like the Tesla V100 don't support multiple P-states but can still benefit from clock control. The daemon automatically detects when P-state control fails and falls back to clock control.
+
+You can configure the high and low clock frequencies:
+
+```sh
+# Set specific memory and GPU clocks (in MHz)
+./nvidia-pstated --clock-mem-high 0 --clock-gpu-high 0 --clock-mem-low 877 --clock-gpu-low 135
+```
+
+Where:
+- `--clock-mem-high 0`: Use automatic/maximum memory clock in high performance mode (default)
+- `--clock-gpu-high 0`: Use automatic/maximum GPU clock in high performance mode (default)  
+- `--clock-mem-low 877`: Use 877 MHz for memory clock in low performance mode  
+- `--clock-gpu-low 135`: Use 135 MHz for GPU clock in low performance mode
+
+If you don't specify the low clocks, the daemon will automatically find and use the lowest supported clocks.
+
+To disable the clock control fallback entirely:
+
+```sh
+./nvidia-pstated --no-fallback-clocks
 ```
 
 ### systemd service
