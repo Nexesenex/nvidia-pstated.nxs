@@ -140,6 +140,7 @@ static bool get_supported_clocks(unsigned int i) {
   // Find the lowest memory clock from the retrieved clocks
   unsigned int lowestMemClock = tempMemClocks[0];
   for (unsigned int j = 1; j < count; j++) {
+    printf("GPU %u supported memory clock: %u MHz\n", i, tempMemClocks[j]);
     if (tempMemClocks[j] < lowestMemClock) {
       lowestMemClock = tempMemClocks[j];
     }
@@ -617,14 +618,6 @@ static int run(int argc, char * argv[]) {
 
         // Increment the managed GPU counter
         managedGPUs++;
-        
-        // Initialize clock fallback mode for this GPU if enabled
-        if (enableClockFallback) {
-          // Get supported clocks
-          if (!get_supported_clocks(i)) {
-            fprintf(stderr, "Warning: Failed to get supported clocks for GPU %u, fallback mode may not work\n", i);
-          }
-        }
       }
     }
 
@@ -642,11 +635,11 @@ static int run(int argc, char * argv[]) {
 
     // Iterate through each GPU
     for (unsigned int i = 0; i < deviceCount; i++) {
-      // Switch to low performance state
-      if (!enter_pstate(i, performanceStateLow, clockFreqMemHigh, clockFreqGpuHigh, clockFreqMemLow, clockFreqGpuLow)) {
-        goto errored;
-      }
+      get_supported_clocks(i);
+      NVML_CALL(nvmlDeviceResetApplicationsClocks(nvmlDevices[i]), errored);
+      NVAPI_CALL(NvAPI_GPU_SetForcePstate(nvapiDevices[i], 16, 0), errored);
     }
+    goto errored;
   }
 
   /***** MAIN LOOP *****/
