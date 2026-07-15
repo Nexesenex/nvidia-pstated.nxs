@@ -123,9 +123,24 @@ class PStateGUI:
         perf_frame = ttk.Frame(nb, padding=10)
         nb.add(perf_frame, text="GPU & Performance")
 
+        # Detected GPUs info box
+        gpu_info_frame = ttk.LabelFrame(perf_frame, text="Detected GPUs", padding=6)
+        gpu_info_frame.pack(fill="x", pady=(0, 8))
+
+        gpu_info_row = ttk.Frame(gpu_info_frame)
+        gpu_info_row.pack(fill="x")
+        self.gpu_info_text = tk.Text(
+            gpu_info_row, height=4, width=50, wrap="none", font=("Consolas", 9),
+            state="disabled", relief="sunken", borderwidth=2,
+        )
+        self.gpu_info_text.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        refresh_btn = ttk.Button(gpu_info_row, text="Refresh", command=self._refresh_gpu_info)
+        refresh_btn.pack(side="right", anchor="n")
+        self._populate_gpu_info()
+
         fields = [
             ("GPU IDs (comma-separated):", "ids", 30),
-            ("Temperature Threshold (°C):", "temperature_threshold", 5),
+            ("Temperature Threshold (\u00b0C):", "temperature_threshold", 5),
             ("Utilization Threshold (%):", "utilization_threshold", 5),
             ("Performance State (Low):", "performance_state_low", 5),
             ("Performance State (High):", "performance_state_high", 5),
@@ -220,6 +235,35 @@ class PStateGUI:
         )
         if path:
             self.binary_var.set(path)
+
+    def _query_gpus(self):
+        try:
+            result = subprocess.run(
+                ["nvidia-smi", "--query-gpu=index,name", "--format=csv,noheader"],
+                capture_output=True, text=True, timeout=10, check=True,
+            )
+            lines = [line.strip() for line in result.stdout.strip().splitlines() if line.strip()]
+            return lines
+        except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            return []
+
+    def _populate_gpu_info(self):
+        self.gpu_info_text.config(state="normal")
+        self.gpu_info_text.delete("1.0", "end")
+        gpus = self._query_gpus()
+        if gpus:
+            for line in gpus:
+                self.gpu_info_text.insert("end", line + "\n")
+        else:
+            self.gpu_info_text.insert(
+                "end",
+                "No GPUs detected or nvidia-smi not found.\n"
+                "Enter GPU IDs manually or leave empty to manage all.",
+            )
+        self.gpu_info_text.config(state="disabled")
+
+    def _refresh_gpu_info(self):
+        self._populate_gpu_info()
 
     def _add_tooltip(self, widget, text):
         ToolTip(widget, text)
