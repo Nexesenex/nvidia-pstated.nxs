@@ -100,6 +100,22 @@ class PStateGUI:
             TOOLTIPS["binary_path"],
         )
 
+        # --- Defaults (must be before _build_fields) ---
+        self._defaults = {
+            "ids": "",
+            "temperature_threshold": "80",
+            "utilization_threshold": "0",
+            "performance_state_low": "8",
+            "performance_state_high": "16",
+            "sleep_interval": "100",
+            "iterations_before_switch": "30",
+            "iterations_before_idle": "9000",
+            "iterations_before_keepalive": "10",
+            "disable_fan_script": "",
+            "enable_fan_script": "",
+            "keepalive_fan_script": "",
+        }
+
         nb = ttk.Notebook(main)
         nb.pack(fill="both", expand=True, pady=(0, 8))
 
@@ -176,22 +192,6 @@ class PStateGUI:
         self.cmd_text.pack(fill="x")
         self.cmd_text.insert("1.0", "Configure options above, then click 'Generate Command'")
         self.cmd_text.config(state="disabled")
-
-        # --- Defaults ---
-        self._defaults = {
-            "ids": "",
-            "temperature_threshold": "80",
-            "utilization_threshold": "0",
-            "performance_state_low": "8",
-            "performance_state_high": "16",
-            "sleep_interval": "100",
-            "iterations_before_switch": "30",
-            "iterations_before_idle": "9000",
-            "iterations_before_keepalive": "10",
-            "disable_fan_script": "",
-            "enable_fan_script": "",
-            "keepalive_fan_script": "",
-        }
 
         # Center window
         self.root.update_idletasks()
