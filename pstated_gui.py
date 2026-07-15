@@ -1,11 +1,27 @@
+import atexit
 import ctypes
 import json
+import tempfile
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import subprocess
 import sys
 import os
 import shlex
+
+
+_temp_files = []
+
+
+def _cleanup_temp():
+    for p in _temp_files:
+        try:
+            os.remove(p)
+        except Exception:
+            pass
+
+
+atexit.register(_cleanup_temp)
 
 
 def _is_admin():
@@ -16,8 +32,15 @@ def _is_admin():
 
 
 def _runas(cmd_args):
+    bat_path = os.path.join(tempfile.gettempdir(), f"nvsrv_{os.getpid()}.bat")
+    with open(bat_path, "w") as f:
+        f.write("@echo off\n")
+        f.write(" ".join(cmd_args) + "\n")
+        f.write("echo.\necho Command finished. Press any key to exit...\n")
+        f.write("pause > nul\n")
+    _temp_files.append(bat_path)
     ctypes.windll.shell32.ShellExecuteW(
-        None, "runas", cmd_args[0], " ".join(cmd_args[1:]) if len(cmd_args) > 1 else "",
+        None, "runas", bat_path, "",
         None, 1,
     )
 
