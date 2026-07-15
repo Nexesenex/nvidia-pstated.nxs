@@ -1,3 +1,4 @@
+import json
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import subprocess
@@ -21,6 +22,7 @@ TOOLTIPS = {
     "keepalive_fan_script": "Shell command run periodically with FAN_STATE=1 (enabled)\nor FAN_STATE=2 (disabled) in the environment.\nUseful to keep smart relays or fan controllers alive.\nDefault: none",
     "binary_path": "Path to the nvidia-pstated executable.\nThe GUI looks for it in the current directory automatically.",
     "service_mode": "[Windows only] Pass --service to the binary, making it\nregister with the Service Control Manager (SCM).\nRequires administrator privileges to install the service.",
+    "profile_name": "Name of the currently selected profile.\nProfiles store all option values for quick reload.",
 }
 
 
@@ -99,6 +101,23 @@ class PStateGUI:
             ttk.Label(path_frame, text="?"),
             TOOLTIPS["binary_path"],
         )
+
+        # --- Profile manager ---
+        prof_frame = ttk.LabelFrame(main, text="Profiles", padding=8)
+        prof_frame.pack(fill="x", pady=(0, 8))
+
+        row = ttk.Frame(prof_frame)
+        row.pack(fill="x")
+        self._profile_combo = ttk.Combobox(row, width=30, state="readonly")
+        self._profile_combo.pack(side="left", padx=(0, 6))
+        self._profile_combo.bind("<<ComboboxSelected>>", self._on_profile_select)
+        self._add_tooltip(self._profile_combo, TOOLTIPS["profile_name"])
+        ttk.Button(row, text="New", command=self._new_profile, width=8).pack(side="left", padx=1)
+        ttk.Button(row, text="Save", command=self._save_current, width=8).pack(side="left", padx=1)
+        ttk.Button(row, text="Save As", command=self._save_as, width=8).pack(side="left", padx=1)
+        ttk.Button(row, text="Rename", command=self._rename_profile, width=8).pack(side="left", padx=1)
+        ttk.Button(row, text="Delete", command=self._delete_profile, width=8).pack(side="left", padx=1)
+        self._refresh_profile_list()
 
         # --- Defaults (must be before _build_fields) ---
         self._defaults = {
@@ -385,6 +404,155 @@ class PStateGUI:
         self.cmd_text.delete("1.0", "end")
         self.cmd_text.insert("1.0", text)
         self.cmd_text.config(state="disabled")
+
+    # --------------- profile manager ---------------
+    def _profile_dir(self):
+        d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "profiles")
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def _list_profiles(self):
+        ext = ".json"
+        dir_ = self._profile_dir()
+        names = []
+        for f in sorted(os.listdir(dir_)):
+            if f.endswith(ext):
+                names.append(f[: -len(ext)])
+        return names
+
+    def _profile_path(self, name):
+        return os.path.join(self._profile_dir(), name + ".json")
+
+    def _profile_data(self):
+        data = {}
+        for key in self._defaults:
+            data[key] = self._entries[key].get()
+        data["binary_path"] = self.binary_var.get()
+        data["service_mode"] = self.service_var.get()
+        return data
+
+    def _apply_profile(self, data):
+        for key in self._defaults:
+            if key in data:
+                self._entries[key].set(data[key])
+        if "binary_path" in data:
+            self.binary_var.set(data["binary_path"])
+        if "service_mode" in data:
+            self.service_var.set(data["service_mode"] == True)
+
+    def _refresh_profile_list(self):
+        self._profile_combo["values"] = self._list_profiles()
+        current = self._profile_combo.get()
+        if current and current in self._list_profiles():
+            self._profile_combo.set(current)
+        else:
+            self._profile_combo.set("")
+
+    def _on_profile_select(self, event=None):
+        name = self._profile_combo.get()
+        if not name:
+            return
+        path = self._profile_path(name)
+        if not os.path.isfile(path):
+            return
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+            self._apply_profile(data)
+        except Exception as e:
+            messagebox.showerror("Load Error", f"Failed to load profile:\n{e}", parent=self.root)
+
+    def _save_profile(self, name, data):
+        path = self._profile_path(name)
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
+        self._refresh_profile_list()
+        self._profile_combo.set(name)
+
+    def _new_profile(self):
+        name = self._ask_name("New Profile", "Enter a name for the new profile:")
+        if not name:
+            return
+        if os.path.isfile(self._profile_path(name)):
+            messagebox.showerror("Error", f"Profile '{name}' already exists.", parent=self.root)
+            return
+        self._save_profile(name, self._profile_data())
+
+    def _save_current(self):
+        name = self._profile_combo.get()
+        if not name:
+            self._save_as()
+            return
+        self._save_profile(name, self._profile_data())
+
+    def _save_as(self):
+        name = self._ask_name("Save As", "Enter a new profile name:")
+        if not name:
+            return
+        self._save_profile(name, self._profile_data())
+
+    def _rename_profile(self):
+        old = self._profile_combo.get()
+        if not old:
+            messagebox.showinfo("Rename", "Select a profile first.", parent=self.root)
+            return
+        new = self._ask_name("Rename Profile", "Enter the new name:", initial=old)
+        if not new or new == old:
+            return
+        old_path = self._profile_path(old)
+        new_path = self._profile_path(new)
+        if os.path.isfile(new_path):
+            messagebox.showerror("Error", f"Profile '{new}' already exists.", parent=self.root)
+            return
+        try:
+            os.rename(old_path, new_path)
+            self._refresh_profile_list()
+            self._profile_combo.set(new)
+        except OSError as e:
+            messagebox.showerror("Rename Error", str(e), parent=self.root)
+
+    def _delete_profile(self):
+        name = self._profile_combo.get()
+        if not name:
+            messagebox.showinfo("Delete", "Select a profile first.", parent=self.root)
+            return
+        if not messagebox.askyesno("Confirm Delete", f"Delete profile '{name}'?", parent=self.root):
+            return
+        path = self._profile_path(name)
+        try:
+            os.remove(path)
+            self._refresh_profile_list()
+        except OSError as e:
+            messagebox.showerror("Delete Error", str(e), parent=self.root)
+
+    def _ask_name(self, title, prompt, initial=""):
+        dialog = tk.Toplevel(self.root)
+        dialog.title(title)
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        f = ttk.Frame(dialog, padding=12)
+        f.pack()
+        ttk.Label(f, text=prompt).pack(anchor="w")
+        var = tk.StringVar(value=initial)
+        entry = ttk.Entry(f, textvariable=var, width=40)
+        entry.pack(pady=6)
+        entry.select_range(0, "end")
+        entry.focus()
+        result = [None]
+        def ok():
+            result[0] = var.get().strip()
+            dialog.destroy()
+        def cancel():
+            dialog.destroy()
+        bf = ttk.Frame(f)
+        bf.pack()
+        ttk.Button(bf, text="OK", command=ok).pack(side="left", padx=4)
+        ttk.Button(bf, text="Cancel", command=cancel).pack(side="left", padx=4)
+        dialog.bind("<Return>", lambda e: ok())
+        dialog.bind("<Escape>", lambda e: cancel())
+        self.root.wait_window(dialog)
+        return result[0]
 
     def run(self):
         self.root.mainloop()
