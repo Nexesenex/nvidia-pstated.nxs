@@ -8,19 +8,19 @@ import shlex
 
 TOOLTIPS = {
     "ids": "GPU indices to manage (comma-separated, e.g. 0,1,2,3).\nLeave empty to manage ALL detected GPUs.\nIndices match what nvidia-smi shows.",
-    "temperature_threshold": "If GPU temp exceeds this (in Celsius), the GPU is forced into\nlow P-State and fans turn on — regardless of utilization.\nDefault: 80 °C",
-    "utilization_threshold": "If GPU utilization is ABOVE this percent, switch to high P-State.\nDefault: 0% (meaning ANY utilization triggers high state).",
-    "performance_state_low": "P-State to use when GPU is idle, cool, or overheated.\nLower number = higher performance / more power.\nDefault: 8 | Range: 0–16",
-    "performance_state_high": "P-State to use when GPU is active and cool.\nHigher number = lower performance / less power.\nDefault: 16 | Range: 0–16",
-    "sleep_interval": "How long (in milliseconds) to wait between monitoring loops.\nDefault: 100 ms  |  Lower = more responsive but more CPU.",
-    "iterations_before_switch": "How many consecutive below-threshold readings before\nswitching from high P-State down to low P-State (debounce).\nDefault: 30 iterations",
-    "iterations_before_idle": "How many iterations all GPUs must stay in low P-State\nbefore the disable-fan script is called.\nDefault: 9000 (~15 min at 100 ms sleep).",
-    "iterations_before_keepalive": "How many iterations between keepalive fan script runs.\nDefault: 10",
-    "disable_fan_script": "Shell command to run when fans should turn OFF\n(e.g. turn off AC rack fans via a smart relay).\nDefault: none (fans are purely software-controlled).",
-    "enable_fan_script": "Shell command to run when fans should turn ON.\nDefault: none",
-    "keepalive_fan_script": "Shell command run periodically with FAN_STATE=1 or 2.\nUseful to refresh fan-controller timeouts.\nDefault: none",
-    "binary_path": "Path to the nvidia-pstated executable.\nThe GUI will look for it in the current directory.",
-    "service_mode": "[Windows only] Register and run as a Windows Service.\nRequires administrator privileges.",
+    "temperature_threshold": "If GPU temp exceeds this (in Celsius), the GPU is forced into\nlow P-State and fans turn on \u2014 regardless of utilization.\nDefault: 80 \u00b0C  |  Range: 0\u2013120",
+    "utilization_threshold": "If GPU utilization is ABOVE this percent, switch to high P-State.\nDefault: 0% (meaning ANY utilization triggers high state).\nRange: 0\u2013100",
+    "performance_state_low": "P-State (performance state) used when GPU is idle, cool, or\noverheated. Lower number = higher clocks / more power draw.\nDefault: 8  |  Range: 0 (max perf) \u2013 16 (min perf)",
+    "performance_state_high": "P-State used when GPU is actively processing and cool.\nHigher number = lower clocks / less power draw.\nDefault: 16  |  Range: 0 (max perf) \u2013 16 (min perf)",
+    "sleep_interval": "Delay (in milliseconds) between each monitoring loop.\nLower = more responsive but uses more CPU.\nDefault: 100 ms  |  Typical: 50\u20131000",
+    "iterations_before_switch": "Debounce: how many consecutive low-utilization readings\nmust occur before switching from high P-State down to low.\nPrevents rapid back-and-forth toggling.\nDefault: 30 iterations",
+    "iterations_before_idle": "How long all GPUs must remain in low P-State before the\ndisable-fan script is triggered.\nDefault: 9000 (\u224815 minutes at 100 ms sleep interval).",
+    "iterations_before_keepalive": "How many iterations between executions of the keepalive\nfan script (to refresh fan-controller timeouts).\nDefault: 10 iterations",
+    "disable_fan_script": "Shell command to run when external fans should turn OFF\n(e.g. curl a smart relay to cut AC power to rack fans).\nExecuted via system() \u2014 pipes, redirects, env vars work.\nDefault: none (no external fan control)",
+    "enable_fan_script": "Shell command to run when external fans should turn ON.\nExecuted via system() \u2014 pipes, redirects, env vars work.\nDefault: none (no external fan control)",
+    "keepalive_fan_script": "Shell command run periodically with FAN_STATE=1 (enabled)\nor FAN_STATE=2 (disabled) in the environment.\nUseful to keep smart relays or fan controllers alive.\nDefault: none",
+    "binary_path": "Path to the nvidia-pstated executable.\nThe GUI looks for it in the current directory automatically.",
+    "service_mode": "[Windows only] Pass --service to the binary, making it\nregister with the Service Control Manager (SCM).\nRequires administrator privileges to install the service.",
 }
 
 
