@@ -196,7 +196,7 @@ class PStateGUI:
         self.service_var = tk.BooleanVar()
         cb = ttk.Checkbutton(
             svc_frame,
-            text="Run as Windows Service (--service)",
+            text="Append --service flag (Windows service mode)",
             variable=self.service_var,
                )
         cb.pack(anchor="w", pady=4)
@@ -204,19 +204,59 @@ class PStateGUI:
 
         ttk.Label(
             svc_frame,
-            text="Note: Service mode is only valid on Windows\nand usually requires administrator privileges.",
+            text="Note: --service flag is only valid on Windows and requires\nadministrator privileges when installing the service.",
             foreground="gray",
+            font=("Segoe UI", 9),
+        ).pack(anchor="w", pady=(0, 10))
+
+        ttk.Separator(svc_frame, orient="horizontal").pack(fill="x", pady=(0, 8))
+
+        ctl_frame = ttk.LabelFrame(svc_frame, text="Service Control (Windows SCM)", padding=8)
+        ctl_frame.pack(fill="x")
+
+        ttk.Label(
+            ctl_frame,
+            text="Manage the installed 'nvidia-pstated' Windows service:",
             font=("Segoe UI", 9),
         ).pack(anchor="w", pady=(0, 8))
 
+        btn_row = ttk.Frame(ctl_frame)
+        btn_row.pack()
+        ttk.Button(btn_row, text="Start Service", command=self._start_service, width=16).pack(side="left", padx=3)
+        ttk.Button(btn_row, text="Stop Service", command=self._stop_service, width=16).pack(side="left", padx=3)
+        ttk.Button(btn_row, text="Restart Service", command=self._restart_service, width=16).pack(side="left", padx=3)
+
+        ttk.Label(
+            ctl_frame,
+            text="Install: sc.exe create nvidia-pstated start=auto binPath=\"...path...\\nvidia-pstated.exe --service\"\nUninstall: sc.exe delete nvidia-pstated",
+            foreground="gray",
+            font=("Consolas", 8),
+            justify="left",
+        ).pack(anchor="w", pady=(8, 0))
+
         # --- Action buttons ---
         btn_frame = ttk.Frame(main)
-        btn_frame.pack(fill="x", pady=(0, 6))
+        btn_frame.pack(fill="x", pady=(0, 4))
 
         ttk.Button(btn_frame, text="Generate Command", command=self._generate_cmd).pack(side="left", padx=(0, 4))
         ttk.Button(btn_frame, text="Copy Command", command=self._copy_cmd).pack(side="left", padx=(0, 4))
-        ttk.Button(btn_frame, text="Launch Service", command=self._launch).pack(side="left", padx=(0, 4))
         ttk.Button(btn_frame, text="Reset Defaults", command=self._reset_defaults).pack(side="left")
+
+        # --- Service control buttons (2nd row) ---
+        svc_btn_frame = ttk.Frame(main)
+        svc_btn_frame.pack(fill="x", pady=(0, 6))
+
+        ttk.Label(svc_btn_frame, text="Service:", font=("Segoe UI", 9, "bold")).pack(side="left", padx=(0, 6))
+        ttk.Button(svc_btn_frame, text="Start Service", command=self._start_service).pack(side="left", padx=(0, 4))
+        ttk.Button(svc_btn_frame, text="Stop Service", command=self._stop_service).pack(side="left", padx=(0, 4))
+        ttk.Button(svc_btn_frame, text="Restart Service", command=self._restart_service).pack(side="left", padx=(0, 4))
+        ttk.Button(svc_btn_frame, text="Launch Process", command=self._launch).pack(side="left", padx=(0, 4))
+        ttk.Label(
+            svc_btn_frame,
+            text="(start/stop/restart manage the Windows service via SCM)",
+            foreground="gray",
+            font=("Segoe UI", 8),
+        ).pack(side="left", padx=(4, 0))
 
         # --- Command preview ---
         preview_frame = ttk.LabelFrame(main, text="Command Preview", padding=6)
@@ -391,6 +431,55 @@ class PStateGUI:
             )
         except Exception as e:
             messagebox.showerror("Launch Error", str(e), parent=self.root)
+
+    def _run_sc(self, action):
+        name = "nvidia-pstated"
+        try:
+            result = subprocess.run(
+                ["net", action, name],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode == 0:
+                messagebox.showinfo(
+                    f"Service {action.title()}",
+                    f"Service '{name}' {action}ed successfully.",
+                    parent=self.root,
+                )
+            else:
+                err = result.stderr.strip() or result.stdout.strip()
+                messagebox.showerror(
+                    f"Service {action.title()}",
+                    f"Failed to {action} service '{name}':\n{err}",
+                    parent=self.root,
+                )
+        except FileNotFoundError:
+            messagebox.showerror(
+                "Error",
+                "'net' command not found. This feature is Windows-only.",
+                parent=self.root,
+            )
+        except subprocess.TimeoutExpired:
+            messagebox.showerror("Error", f"Timed out waiting for '{action}' command.", parent=self.root)
+
+    def _start_service(self):
+        self._run_sc("start")
+
+    def _stop_service(self):
+        self._run_sc("stop")
+
+    def _restart_service(self):
+        try:
+            subprocess.run(["net", "stop", "nvidia-pstated"], capture_output=True, text=True, timeout=30)
+            result = subprocess.run(["net", "start", "nvidia-pstated"], capture_output=True, text=True, timeout=30)
+            if result.returncode == 0:
+                messagebox.showinfo("Service Restart", "Service 'nvidia-pstated' restarted successfully.", parent=self.root)
+            else:
+                err = result.stderr.strip() or result.stdout.strip()
+                messagebox.showerror("Service Restart", f"Failed to restart service:\n{err}", parent=self.root)
+        except FileNotFoundError:
+            messagebox.showerror("Error", "'net' command not found. This feature is Windows-only.", parent=self.root)
+        except subprocess.TimeoutExpired:
+            messagebox.showerror("Error", "Timed out waiting for restart.", parent=self.root)
 
     def _reset_defaults(self):
         for key, val in self._defaults.items():
