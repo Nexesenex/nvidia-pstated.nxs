@@ -1,3 +1,4 @@
+import ctypes
 import json
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
@@ -5,6 +6,20 @@ import subprocess
 import sys
 import os
 import shlex
+
+
+def _is_admin():
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin() != 0
+    except Exception:
+        return False
+
+
+def _runas(cmd_args):
+    ctypes.windll.shell32.ShellExecuteW(
+        None, "runas", cmd_args[0], " ".join(cmd_args[1:]) if len(cmd_args) > 1 else "",
+        None, 1,
+    )
 
 
 TOOLTIPS = {
@@ -434,32 +449,55 @@ class PStateGUI:
 
     def _run_sc(self, action):
         name = "nvidia-pstated"
-        try:
-            result = subprocess.run(
-                ["net", action, name],
-                capture_output=True, text=True, timeout=30,
-            )
+        cmds = [["net", action, name], ["sc", action, name]]
+        last_err = ""
+        for cmd in cmds:
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            except FileNotFoundError:
+                continue
             if result.returncode == 0:
                 messagebox.showinfo(
                     f"Service {action.title()}",
                     f"Service '{name}' {action}ed successfully.",
                     parent=self.root,
                 )
-            else:
-                err = result.stderr.strip() or result.stdout.strip()
-                messagebox.showerror(
-                    f"Service {action.title()}",
-                    f"Failed to {action} service '{name}':\n{err}",
+                return
+            last_err = result.stderr.strip() or result.stdout.strip()
+            if "access is denied" in last_err.lower():
+                break
+        if "access is denied" in last_err.lower():
+            if not _is_admin():
+                reply = messagebox.askyesno(
+                    "Access Denied",
+                    "Service management requires administrator privileges.\n\n"
+                    "Would you like to retry with elevated permissions?",
                     parent=self.root,
                 )
-        except FileNotFoundError:
+                if reply:
+                    if action == "restart":
+                        _runas(["net", "stop", name])
+                        _runas(["net", "start", name])
+                    else:
+                        _runas(["net", action, name])
+                    messagebox.showinfo(
+                        "Elevation Requested",
+                        f"An elevated window should appear.\n"
+                        f"Complete the UAC prompt to {action} the service.",
+                        parent=self.root,
+                    )
+            else:
+                messagebox.showerror(
+                    f"Service {action.title()}",
+                    f"Failed to {action} service '{name}':\n{last_err}",
+                    parent=self.root,
+                )
+        else:
             messagebox.showerror(
-                "Error",
-                "'net' command not found. This feature is Windows-only.",
+                f"Service {action.title()}",
+                f"Failed to {action} service '{name}':\n{last_err}",
                 parent=self.root,
             )
-        except subprocess.TimeoutExpired:
-            messagebox.showerror("Error", f"Timed out waiting for '{action}' command.", parent=self.root)
 
     def _start_service(self):
         self._run_sc("start")
@@ -468,18 +506,44 @@ class PStateGUI:
         self._run_sc("stop")
 
     def _restart_service(self):
-        try:
-            subprocess.run(["net", "stop", "nvidia-pstated"], capture_output=True, text=True, timeout=30)
-            result = subprocess.run(["net", "start", "nvidia-pstated"], capture_output=True, text=True, timeout=30)
-            if result.returncode == 0:
-                messagebox.showinfo("Service Restart", "Service 'nvidia-pstated' restarted successfully.", parent=self.root)
+        name = "nvidia-pstated"
+        cmds = [["net", "stop", name], ["net", "start", name]]
+        failures = []
+        for cmd in cmds:
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                if result.returncode != 0:
+                    failures.append((cmd, result.stderr.strip() or result.stdout.strip()))
+            except FileNotFoundError:
+                failures.append((cmd, "command not found"))
+                break
+            except subprocess.TimeoutExpired:
+                failures.append((cmd, "timed out"))
+        if not failures:
+            messagebox.showinfo("Service Restart", "Service 'nvidia-pstated' restarted successfully.", parent=self.root)
+        else:
+            last_err = failures[0][1]
+            if "access is denied" in last_err.lower():
+                if not _is_admin():
+                    reply = messagebox.askyesno(
+                        "Access Denied",
+                        "Service management requires administrator privileges.\n\n"
+                        "Would you like to retry with elevated permissions?",
+                        parent=self.root,
+                    )
+                    if reply:
+                        _runas(["net", "stop", name])
+                        _runas(["net", "start", name])
+                        messagebox.showinfo(
+                            "Elevation Requested",
+                            "An elevated window should appear.\n"
+                            "Complete the UAC prompt to restart the service.",
+                            parent=self.root,
+                        )
+                else:
+                    messagebox.showerror("Service Restart", f"Failed to restart service:\n{last_err}", parent=self.root)
             else:
-                err = result.stderr.strip() or result.stdout.strip()
-                messagebox.showerror("Service Restart", f"Failed to restart service:\n{err}", parent=self.root)
-        except FileNotFoundError:
-            messagebox.showerror("Error", "'net' command not found. This feature is Windows-only.", parent=self.root)
-        except subprocess.TimeoutExpired:
-            messagebox.showerror("Error", "Timed out waiting for restart.", parent=self.root)
+                messagebox.showerror("Service Restart", f"Failed to restart service:\n{last_err}", parent=self.root)
 
     def _reset_defaults(self):
         for key, val in self._defaults.items():
